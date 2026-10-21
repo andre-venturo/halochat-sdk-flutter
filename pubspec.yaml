@@ -1,0 +1,26 @@
+name: halochat_flutter
+description: "Flutter bridge over the HaloChat core SDK (Android + iOS), for apps that draw their own chat UI."
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.3
+  flutter: '>=3.3.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: id.co.venturo.halochat_flutter
+        pluginClass: HalochatFlutterPlugin
+      ios:
+        pluginClass: HalochatFlutterPlugin

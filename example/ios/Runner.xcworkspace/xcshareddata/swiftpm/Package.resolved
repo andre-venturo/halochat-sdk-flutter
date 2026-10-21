@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "halochat-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/afgventura/halochat-ios.git",
+      "state" : {
+        "revision" : "4fa931384ca5825958b706c8ab236fd9eb087169",
+        "version" : "0.3.0"
+      }
+    }
+  ],
+  "version" : 2
+}
