@@ -40,6 +40,7 @@ final sub = HaloChat.timeline(onError: (e) => log('$e')).listen((window) {
   // Whole live window, ascending, de-duplicated. Merge older pages yourself by id.
 });
 final older = await HaloChat.messagesBefore(page.oldestCursor!);
+await HaloChat.refresh(); // app resumed / push for the open chat: skip the 5s poll wait
 
 await HaloChat.send('Halo', extras: {'type': 'anamnesa'}, clientMessageId: uuidV4);
 await HaloChat.sendAttachment(file.path, filename: 'ktp.jpg', mimeType: 'image/jpeg');

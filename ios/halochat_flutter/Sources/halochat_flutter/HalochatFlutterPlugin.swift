@@ -14,6 +14,9 @@ public class HalochatFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
     private let channel: FlutterMethodChannel
     private var client: HaloChatClient?
     private var timelineTask: Task<Void, Never>?
+    // The current Dart listener and its window size, kept so `refresh` can restart into it.
+    private var timelineEvents: FlutterEventSink?
+    private var timelineLimit = 50
 
     // HaloChat pushes on iOS go straight through APNs (not FCM), so firebase_messaging never sees
     // them. The app's AppDelegate forwards them here; these statics bridge them to Dart.
@@ -77,7 +80,7 @@ public class HalochatFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
             var config = HaloChatConfiguration()
             if let raw = args["baseUrl"] as? String, let url = URL(string: raw) { config.baseURL = url }
             if let raw = args["realtimeUrl"] as? String, let url = URL(string: raw) { config.realtimeURL = url }
-            timelineTask?.cancel()
+            stopTimeline()
             client = HaloChatClient(
                 configuration: config,
                 tokenProvider: HaloChatClosureTokenProvider { [weak self] forceRefresh in
@@ -109,7 +112,7 @@ public class HalochatFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         case "signOut":
             // Drop the client even if the server call failed: the user is gone locally.
             defer {
-                timelineTask?.cancel()
+                stopTimeline()
                 self.client = nil
             }
             try await client.signOut()
@@ -150,6 +153,9 @@ public class HalochatFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         case "unregisterPushToken":
             try await client.unregisterPushToken(args["token"] as? String ?? "")
             return nil
+        case "refresh":
+            startTimeline(client)
+            return nil
         default:
             return FlutterMethodNotImplemented
         }
@@ -159,7 +165,24 @@ public class HalochatFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
 
     public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         guard let client else { return FlutterError(code: "NO_USER", message: "Call setUser first", details: nil) }
-        let initialLimit = (arguments as? [String: Any])?["initialLimit"] as? Int ?? 50
+        timelineEvents = events
+        timelineLimit = (arguments as? [String: Any])?["initialLimit"] as? Int ?? 50
+        startTimeline(client)
+        return nil
+    }
+
+    public func onCancel(withArguments arguments: Any?) -> FlutterError? {
+        stopTimeline()
+        return nil
+    }
+
+    /// (Re)starts the native timeline into the current Dart listener; no-op without one. A fresh
+    /// timeline backfills and opens its socket at once, while a running one whose socket dropped
+    /// (app in background) sleeps `pollInterval` (5s) before it asks the server again. `refresh`
+    /// restarts it to skip that wait.
+    private func startTimeline(_ client: HaloChatClient) {
+        guard let events = timelineEvents else { return }
+        let initialLimit = timelineLimit
         timelineTask?.cancel()
         timelineTask = Task {
             let stream = client.timeline(initialLimit: initialLimit, onError: { error in
@@ -172,13 +195,13 @@ public class HalochatFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
                 await MainActor.run { events(maps) }
             }
         }
-        return nil
     }
 
-    public func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    /// Ends the subscription and forgets the listener, so a later `refresh` cannot revive it.
+    private func stopTimeline() {
         timelineTask?.cancel()
         timelineTask = nil
-        return nil
+        timelineEvents = nil
     }
 
     // MARK: Token

@@ -95,6 +95,12 @@ class HaloChat {
             },
           ));
 
+  /// Restarts the live [timeline] now: backfill, then a fresh socket. Once its socket dropped (app
+  /// in background), a running timeline waits the SDK poll interval (5s) before it asks the server
+  /// again, so call this when the app returns to the foreground or a push for the open chat
+  /// arrives. The new window goes to the existing [timeline] listener. No-op while nothing listens.
+  static Future<void> refresh() => _invoke<void>('refresh');
+
   /// Sends text, optionally with [extras] (JSON object, at most 16 KB, needs a server with
   /// extras support). Keep [clientMessageId] until the send succeeds and retry with the SAME id:
   /// the server never creates a second message for it.

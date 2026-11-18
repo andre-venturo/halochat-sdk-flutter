@@ -47,6 +47,9 @@ class HalochatFlutterPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Ev
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var client: HaloChatClient? = null
     private var timelineJob: Job? = null
+    // The current Dart listener and its window size, kept so `refresh` can restart into it.
+    private var timelineSink: EventChannel.EventSink? = null
+    private var timelineLimit = 50
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(binding.binaryMessenger, "halochat_flutter")
@@ -73,7 +76,7 @@ class HalochatFlutterPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Ev
                 baseUrl = call.argument<String>("baseUrl") ?: defaults.baseUrl,
                 realtimeUrl = call.argument<String>("realtimeUrl") ?: defaults.realtimeUrl,
             )
-            timelineJob?.cancel()
+            stopTimeline()
             client = HaloChatClient(config = config, tokenProvider = HaloChatTokenProvider { force -> requestToken(force) })
             result.success(null)
             return
@@ -86,7 +89,7 @@ class HalochatFlutterPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Ev
                         c.signOut(); null
                     } finally {
                         // Drop the client even if the server call failed: the user is gone locally.
-                        timelineJob?.cancel()
+                        stopTimeline()
                         client = null
                     }
                     "conversation" -> c.conversation().toMap()
@@ -115,6 +118,7 @@ class HalochatFlutterPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Ev
                     "mediaUrl" -> c.mediaUrl(call.argument<String>("messageId")!!)
                     "registerPushToken" -> { c.registerPushToken(call.argument<String>("token")!!); null }
                     "unregisterPushToken" -> { c.unregisterPushToken(call.argument<String>("token")!!); null }
+                    "refresh" -> { startTimeline(c); null }
                     else -> return@launch result.notImplemented()
                 }
                 result.success(value)
@@ -128,7 +132,24 @@ class HalochatFlutterPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Ev
 
     override fun onListen(arguments: Any?, sink: EventChannel.EventSink) {
         val c = client ?: return sink.error("NO_USER", "Call setUser first", null)
-        val initialLimit = (arguments as? Map<*, *>)?.get("initialLimit") as? Int ?: 50
+        timelineSink = sink
+        timelineLimit = (arguments as? Map<*, *>)?.get("initialLimit") as? Int ?: 50
+        startTimeline(c)
+    }
+
+    override fun onCancel(arguments: Any?) {
+        stopTimeline()
+    }
+
+    /**
+     * (Re)starts the native timeline into the current Dart listener; no-op without one. A fresh
+     * timeline backfills and opens its socket at once, while a running one whose socket dropped
+     * (app in background) waits `pollIntervalMillis` (5s) before it asks the server again.
+     * `refresh` restarts it to skip that wait.
+     */
+    private fun startTimeline(c: HaloChatClient) {
+        val sink = timelineSink ?: return
+        val initialLimit = timelineLimit
         timelineJob?.cancel()
         timelineJob = scope.launch {
             c.timeline(initialLimit, onError = { e ->
@@ -138,9 +159,11 @@ class HalochatFlutterPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Ev
         }
     }
 
-    override fun onCancel(arguments: Any?) {
+    /** Ends the subscription and forgets the listener, so a later `refresh` cannot revive it. */
+    private fun stopTimeline() {
         timelineJob?.cancel()
         timelineJob = null
+        timelineSink = null
     }
 
     /** Asks Dart for a token; the app mints it through its own backend. */

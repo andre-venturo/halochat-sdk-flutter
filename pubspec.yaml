@@ -1,6 +1,6 @@
 name: halochat_flutter
 description: "Flutter bridge over the HaloChat core SDK (Android + iOS), for apps that draw their own chat UI."
-version: 0.1.0
+version: 0.1.1
 publish_to: none
 
 environment:

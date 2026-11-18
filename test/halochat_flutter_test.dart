@@ -106,6 +106,26 @@ void main() {
       expect(sent.id, 'm1');
     });
 
+    test('refresh asks native to restart the timeline, with no arguments', () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return null;
+      });
+      await HaloChat.refresh();
+      expect(calls.single.method, 'refresh');
+      expect(calls.single.arguments, isNull);
+    });
+
+    test('refresh without a user surfaces noUser', () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'NO_USER', message: 'Call setUser first');
+      });
+      await expectLater(
+        HaloChat.refresh(),
+        throwsA(isA<HaloChatException>().having((e) => e.code, 'code', HaloChatErrorCode.noUser)),
+      );
+    });
+
     test('PlatformException maps to HaloChatException with details', () async {
       messenger.setMockMethodCallHandler(channel, (call) async {
         throw PlatformException(code: 'RATE_LIMITED', message: 'slow', details: {'retryAfterSeconds': 9});
